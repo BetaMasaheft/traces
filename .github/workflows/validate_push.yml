@@ -1,0 +1,55 @@
+name: Validate Push
+on:
+  push:
+    branches:
+      - master
+
+defaults:
+  run:
+    shell: bash
+    working-directory: project
+
+jobs:
+  validate-all-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      # checkout code
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          path: project
+      # checkout schema as xmllint can't https
+      - name: Checkout schema repo
+        uses: actions/checkout@v7
+        with:
+          repository: BetaMasaheft/Schema
+          path: schema
+      - name: Install Test Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils
+      # Informational only - see validate_pr.yml for why traces never validate
+      # clean against the Beta maṣāḥǝft schema. Kept for a visible drift report.
+      - name: Validate files (report only)
+        continue-on-error: true
+        run: |
+          find . -type f -name '*.xml' \
+            -not -name 'build.xml' \
+            -not -name 'repo.xml' \
+            -not -name 'expath-pkg.xml' \
+            -print0 | \
+          xargs -0 \
+          xmllint --noout --xinclude --nowarning \
+          --relaxng ../schema/tei-betamesaheft.rng 2>&1 | \
+          { grep 'fails to validate' || :; }
+      # The gate: eXist only ever ingests well-formed XML from this repo.
+      - name: Ensure all XML files are well formed
+        run: |
+          find . -type f -name '*.xml' -print0 | xargs -0 xmllint --noout
+      # Bake the .xar (build/traces.xar) - same as ../Works and ../Manuscripts.
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: 8
+      - run: ant
