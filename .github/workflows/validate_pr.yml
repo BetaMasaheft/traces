@@ -1,0 +1,61 @@
+name: Validate PR
+on: pull_request
+
+defaults:
+  run:
+    shell: bash
+    working-directory: project
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # checkout code
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          path: project
+          fetch-depth: 2
+      # checkout schema as xmllint can't https
+      - name: Checkout schema repo
+        uses: actions/checkout@v7
+        with:
+          repository: BetaMasaheft/Schema
+          path: schema
+      - name: Install Test Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils
+      # Schema validation is INFORMATIONAL ONLY here. These are TEI
+      # feature-structure files (linguistic "traces") and the Beta maṣāḥǝft
+      # schema customisation does not cover <fs>/<f>, so they never validate
+      # clean. The production sync (BetMasWeb modules/gitsynctraces.xql ->
+      # gitsync:validateAndConfirm) stores them regardless and only emails a
+      # report; CI mirrors that - report, don't block. The real gate is
+      # well-formedness, below.
+      - name: Validate changed source files (report only)
+        continue-on-error: true
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          mapfile -d '' -t FILES < <(git diff --name-only -z --diff-filter=ACMRT \
+            "$BASE_SHA" "$HEAD_SHA" \
+            -- '*.xml' ':!build.xml' ':!repo.xml' ':!expath-pkg.xml')
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "No XML files changed."
+            exit 0
+          fi
+          printf 'modified: %s\n' "${FILES[@]}"
+          echo "--- schema validation report (non-blocking) ---"
+          xmllint \
+            --noout --xinclude --nowarning \
+            --relaxng ../schema/tei-betamesaheft.rng \
+            "${FILES[@]}" \
+            2>&1 | \
+            { grep -vE 'RNG|validates' || :; } | head -n 300
+      # This IS the gate: a data repo synced into eXist must contain only
+      # well-formed XML. Filenames contain spaces, so NUL-delimit.
+      - name: Ensure all XML files are well formed
+        run: |
+          find . -type f -name '*.xml' -print0 | xargs -0 xmllint --noout
