@@ -48,7 +48,7 @@ jobs:
           find . -type f -name '*.xml' -print0 | xargs -0 xmllint --noout
       # Bake the .xar (build/traces.xar) - same as ../Works and ../Manuscripts.
       - name: Set up Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: 8
